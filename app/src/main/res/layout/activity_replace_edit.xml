@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/root_view"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <com.renaisn.reader.ui.widget.TitleBar
+        android:id="@+id/title_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:contentInsetStartWithNavigation="0dp"
+        app:displayHomeAsUp="true"
+        app:fitStatusBar="false"
+        app:title="@string/replace_rule_edit" />
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <LinearLayout
+            android:id="@+id/ll_content"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="10dp">
+
+            <com.renaisn.reader.ui.widget.text.TextInputLayout
+                android:id="@+id/til_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/replace_rule_summary">
+
+                <com.renaisn.reader.lib.theme.view.ThemeEditText
+                    android:id="@+id/et_name"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    tools:ignore="SpeakableTextPresentCheck,TouchTargetSizeCheck" />
+            </com.renaisn.reader.ui.widget.text.TextInputLayout>
+
+            <com.renaisn.reader.ui.widget.text.TextInputLayout
+                android:id="@+id/til_group"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/group">
+
+                <com.renaisn.reader.lib.theme.view.ThemeEditText
+                    android:id="@+id/et_group"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    tools:ignore="SpeakableTextPresentCheck,TouchTargetSizeCheck" />
+            </com.renaisn.reader.ui.widget.text.TextInputLayout>
+
+            <com.renaisn.reader.ui.widget.text.TextInputLayout
+                android:id="@+id/til_replace_rule"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/replace_rule">
+
+                <com.renaisn.reader.lib.theme.view.ThemeEditText
+                    android:id="@+id/et_replace_rule"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    tools:ignore="SpeakableTextPresentCheck,TouchTargetSizeCheck" />
+            </com.renaisn.reader.ui.widget.text.TextInputLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <com.renaisn.reader.lib.theme.view.ThemeCheckBox
+                    android:id="@+id/cb_use_regex"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/use_regex"
+                    tools:ignore="TouchTargetSizeCheck" />
+
+                <ImageView
+                    android:id="@+id/iv_help"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_help"
+                    app:tint="@color/primaryText"
+                    android:contentDescription="@string/help" />
+
+            </LinearLayout>
+
+            <com.renaisn.reader.ui.widget.text.TextInputLayout
+                android:id="@+id/til_replace_to"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/replace_to">
+
+                <com.renaisn.reader.lib.theme.view.ThemeEditText
+                    android:id="@+id/et_replace_to"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    tools:ignore="SpeakableTextPresentCheck,TouchTargetSizeCheck" />
+            </com.renaisn.reader.ui.widget.text.TextInputLayout>
+
+            <androidx.appcompat.widget.LinearLayoutCompat
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <com.renaisn.reader.lib.theme.view.ThemeCheckBox
+                    android:id="@+id/cb_scope_title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:checked="false"
+                    android:text="@string/scope_title"
+                    tools:ignore="TouchTargetSizeCheck" />
+
+                <com.renaisn.reader.lib.theme.view.ThemeCheckBox
+                    android:id="@+id/cb_scope_content"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginLeft="10dp"
+                    android:checked="true"
+                    android:text="@string/scope_content"
+                    tools:ignore="RtlHardcoded,TouchTargetSizeCheck" />
+
+            </androidx.appcompat.widget.LinearLayoutCompat>
+
+            <com.renaisn.reader.ui.widget.text.TextInputLayout
+                android:id="@+id/til_scope"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/use_to">
+
+                <com.renaisn.reader.lib.theme.view.ThemeEditText
+                    android:id="@+id/et_scope"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    tools:ignore="SpeakableTextPresentCheck,TouchTargetSizeCheck" />
+            </com.renaisn.reader.ui.widget.text.TextInputLayout>
+
+            <com.renaisn.reader.ui.widget.text.TextInputLayout
+                android:id="@+id/til_timeout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/timeout_millisecond">
+
+                <com.renaisn.reader.lib.theme.view.ThemeEditText
+                    android:id="@+id/et_timeout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="number"
+                    tools:ignore="SpeakableTextPresentCheck,TouchTargetSizeCheck" />
+            </com.renaisn.reader.ui.widget.text.TextInputLayout>
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+</LinearLayout>

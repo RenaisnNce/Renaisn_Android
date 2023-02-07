@@ -1,0 +1,435 @@
+package com.renaisn.reader.service
+
+import android.annotation.SuppressLint
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.BitmapFactory
+import android.media.AudioManager
+import android.os.Bundle
+import android.os.PowerManager
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
+import androidx.annotation.CallSuper
+import androidx.core.app.NotificationCompat
+import androidx.media.AudioFocusRequestCompat
+import com.renaisn.reader.R
+import com.renaisn.reader.base.BaseService
+import com.renaisn.reader.constant.*
+import com.renaisn.reader.help.MediaHelp
+import com.renaisn.reader.help.config.AppConfig
+import com.renaisn.reader.help.glide.ImageLoader
+import com.renaisn.reader.model.ReadAloud
+import com.renaisn.reader.model.ReadBook
+import com.renaisn.reader.receiver.MediaButtonReceiver
+import com.renaisn.reader.ui.book.read.ReadBookActivity
+import com.renaisn.reader.ui.book.read.page.entities.TextChapter
+import com.renaisn.reader.utils.*
+import kotlinx.coroutines.*
+import splitties.init.appCtx
+import splitties.systemservices.audioManager
+import splitties.systemservices.powerManager
+
+/**
+ * 朗读服务
+ */
+abstract class BaseReadAloudService : BaseService(),
+    AudioManager.OnAudioFocusChangeListener {
+
+    companion object {
+        @JvmStatic
+        var isRun = false
+            private set
+
+        @JvmStatic
+        var pause = true
+            private set
+
+        @JvmStatic
+        var timeMinute: Int = 0
+            private set
+
+        fun isPlay(): Boolean {
+            return isRun && !pause
+        }
+
+    }
+
+    private val useWakeLock = appCtx.getPrefBoolean(PreferKey.readAloudWakeLock, false)
+    private val wakeLock by lazy {
+        powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "legado:ReadAloudService")
+            .apply {
+                this.setReferenceCounted(false)
+            }
+    }
+    private val mFocusRequest: AudioFocusRequestCompat by lazy {
+        MediaHelp.buildAudioFocusRequestCompat(this)
+    }
+    private val mediaSessionCompat: MediaSessionCompat by lazy {
+        MediaSessionCompat(this, "readAloud")
+    }
+    internal val contentList = arrayListOf<String>()
+    internal var nowSpeak: Int = 0
+    internal var readAloudNumber: Int = 0
+    internal var textChapter: TextChapter? = null
+    internal var pageIndex = 0
+    private var needResumeOnAudioFocusGain = false
+    private var dsJob: Job? = null
+
+    private val broadcastReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY == intent.action) {
+                pauseReadAloud()
+            }
+        }
+    }
+
+    @SuppressLint("WakelockTimeout")
+    override fun onCreate() {
+        super.onCreate()
+        isRun = true
+        pause = false
+        observeLiveBus()
+        initMediaSession()
+        initBroadcastReceiver()
+        upNotification()
+        upMediaSessionPlaybackState(PlaybackStateCompat.STATE_PLAYING)
+        setTimer(AppConfig.ttsTimer)
+        if (AppConfig.ttsTimer > 0) {
+            toastOnUi("朗读定时 ${AppConfig.ttsTimer} 分钟")
+        }
+    }
+
+    fun observeLiveBus() {
+        observeEvent<Bundle>(EventBus.READ_ALOUD_PLAY) {
+            val play = it.getBoolean("play")
+            val pageIndex = it.getInt("pageIndex")
+            val startPos = it.getInt("startPos")
+            newReadAloud(play, pageIndex, startPos)
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (useWakeLock) wakeLock.release()
+        isRun = false
+        pause = true
+        abandonFocus()
+        unregisterReceiver(broadcastReceiver)
+        postEvent(EventBus.ALOUD_STATE, Status.STOP)
+        upMediaSessionPlaybackState(PlaybackStateCompat.STATE_STOPPED)
+        mediaSessionCompat.release()
+        ReadBook.uploadProgress()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            IntentAction.play -> newReadAloud(
+                intent.getBooleanExtra("play", true),
+                intent.getIntExtra("pageIndex", ReadBook.durPageIndex),
+                intent.getIntExtra("startPos", 0)
+            )
+            IntentAction.pause -> pauseReadAloud()
+            IntentAction.resume -> resumeReadAloud()
+            IntentAction.upTtsSpeechRate -> upSpeechRate(true)
+            IntentAction.prevParagraph -> prevP()
+            IntentAction.nextParagraph -> nextP()
+            IntentAction.addTimer -> addTimer()
+            IntentAction.setTimer -> setTimer(intent.getIntExtra("minute", 0))
+            else -> stopSelf()
+        }
+        return super.onStartCommand(intent, flags, startId)
+    }
+
+    private fun newReadAloud(play: Boolean, pageIndex: Int, startPos: Int) {
+        this.pageIndex = pageIndex
+        textChapter = ReadBook.curTextChapter
+        textChapter?.let { textChapter ->
+            nowSpeak = 0
+            readAloudNumber = textChapter.getReadLength(pageIndex) + startPos
+            contentList.clear()
+            val readAloudByPage = getPrefBoolean(PreferKey.readAloudByPage)
+            textChapter.getNeedReadAloud(pageIndex, readAloudByPage, startPos)
+                .split("\n").forEach { text ->
+                    if (text.isNotEmpty()) {
+                        contentList.add(text)
+                    }
+                }
+            if (play) play()
+        }
+    }
+
+    open fun play() {
+        if (useWakeLock) wakeLock.acquire(10 * 60 * 1000L /*10 minutes*/)
+        isRun = true
+        pause = false
+        needResumeOnAudioFocusGain = false
+        upNotification()
+        postEvent(EventBus.ALOUD_STATE, Status.PLAY)
+    }
+
+    abstract fun playStop()
+
+    @CallSuper
+    open fun pauseReadAloud(abandonFocus: Boolean = true) {
+        if (useWakeLock) wakeLock.release()
+        pause = true
+        if (abandonFocus) {
+            abandonFocus()
+        }
+        upNotification()
+        upMediaSessionPlaybackState(PlaybackStateCompat.STATE_PAUSED)
+        postEvent(EventBus.ALOUD_STATE, Status.PAUSE)
+        ReadBook.uploadProgress()
+        doDs()
+    }
+
+    @SuppressLint("WakelockTimeout")
+    @CallSuper
+    open fun resumeReadAloud() {
+        pause = false
+        upMediaSessionPlaybackState(PlaybackStateCompat.STATE_PLAYING)
+        postEvent(EventBus.ALOUD_STATE, Status.PLAY)
+    }
+
+    abstract fun upSpeechRate(reset: Boolean = false)
+
+    private fun prevP() {
+        if (nowSpeak > 0) {
+            playStop()
+            nowSpeak--
+            readAloudNumber -= contentList[nowSpeak].length.minus(1)
+            play()
+        } else {
+            ReadBook.moveToPrevChapter(true)
+        }
+    }
+
+    private fun nextP() {
+        if (nowSpeak < contentList.size - 1) {
+            playStop()
+            readAloudNumber += contentList[nowSpeak].length.plus(1)
+            nowSpeak++
+            play()
+        } else {
+            nextChapter()
+        }
+    }
+
+    private fun setTimer(minute: Int) {
+        timeMinute = minute
+        doDs()
+    }
+
+    private fun addTimer() {
+        if (timeMinute == 180) {
+            timeMinute = 0
+        } else {
+            timeMinute += 10
+            if (timeMinute > 180) timeMinute = 180
+        }
+        doDs()
+    }
+
+    /**
+     * 定时
+     */
+    @Synchronized
+    private fun doDs() {
+        postEvent(EventBus.READ_ALOUD_DS, timeMinute)
+        upNotification()
+        dsJob?.cancel()
+        dsJob = launch {
+            while (isActive) {
+                delay(60000)
+                if (!pause) {
+                    if (timeMinute >= 0) {
+                        timeMinute--
+                    }
+                    if (timeMinute == 0) {
+                        ReadAloud.stop(this@BaseReadAloudService)
+                    }
+                }
+                postEvent(EventBus.READ_ALOUD_DS, timeMinute)
+                upNotification()
+            }
+        }
+    }
+
+    /**
+     * 请求音频焦点
+     * @return 音频焦点
+     */
+    fun requestFocus(): Boolean {
+        if (AppConfig.ignoreAudioFocus) {
+            return true
+        }
+        val requestFocus = MediaHelp.requestFocus(mFocusRequest)
+        if (!requestFocus) {
+            toastOnUi("未获取到音频焦点")
+        }
+        return requestFocus
+    }
+
+    /**
+     * 放弃音频焦点
+     */
+    private fun abandonFocus() {
+        @Suppress("DEPRECATION")
+        audioManager.abandonAudioFocus(this)
+    }
+
+    /**
+     * 更新媒体状态
+     */
+    private fun upMediaSessionPlaybackState(state: Int) {
+        mediaSessionCompat.setPlaybackState(
+            PlaybackStateCompat.Builder()
+                .setActions(MediaHelp.MEDIA_SESSION_ACTIONS)
+                .setState(state, nowSpeak.toLong(), 1f)
+                .build()
+        )
+    }
+
+    /**
+     * 初始化MediaSession, 注册多媒体按钮
+     */
+    @SuppressLint("UnspecifiedImmutableFlag")
+    private fun initMediaSession() {
+        mediaSessionCompat.setCallback(object : MediaSessionCompat.Callback() {
+            override fun onMediaButtonEvent(mediaButtonEvent: Intent): Boolean {
+                return MediaButtonReceiver.handleIntent(this@BaseReadAloudService, mediaButtonEvent)
+            }
+        })
+        mediaSessionCompat.setMediaButtonReceiver(
+            broadcastPendingIntent<MediaButtonReceiver>(Intent.ACTION_MEDIA_BUTTON)
+        )
+        mediaSessionCompat.isActive = true
+    }
+
+    /**
+     * 断开耳机监听
+     */
+    private fun initBroadcastReceiver() {
+        val intentFilter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        registerReceiver(broadcastReceiver, intentFilter)
+    }
+
+    /**
+     * 音频焦点变化
+     */
+    override fun onAudioFocusChange(focusChange: Int) {
+        if (AppConfig.ignoreAudioFocus) {
+            AppLog.put("忽略音频焦点处理(TTS)")
+            return
+        }
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                if (needResumeOnAudioFocusGain) {
+                    AppLog.put("音频焦点获得,继续朗读")
+                    resumeReadAloud()
+                } else {
+                    AppLog.put("音频焦点获得")
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                AppLog.put("音频焦点丢失,暂停朗读")
+                pauseReadAloud()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                AppLog.put("音频焦点暂时丢失并会很快再次获得,暂停朗读")
+                if (!pause) {
+                    needResumeOnAudioFocusGain = true
+                    pauseReadAloud(false)
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // 短暂丢失焦点，这种情况是被其他应用申请了短暂的焦点希望其他声音能压低音量（或者关闭声音）凸显这个声音（比如短信提示音），
+                AppLog.put("音频焦点短暂丢失,不做处理")
+            }
+        }
+    }
+
+    /**
+     * 更新通知
+     */
+    private fun upNotification() {
+        execute {
+            var nTitle: String = when {
+                pause -> getString(R.string.read_aloud_pause)
+                timeMinute > 0 -> getString(
+                    R.string.read_aloud_timer,
+                    timeMinute
+                )
+                else -> getString(R.string.read_aloud_t)
+            }
+            nTitle += ": ${ReadBook.book?.name}"
+            var nSubtitle = ReadBook.curTextChapter?.title
+            if (nSubtitle.isNullOrBlank())
+                nSubtitle = getString(R.string.read_aloud_s)
+            val builder = NotificationCompat
+                .Builder(this@BaseReadAloudService, AppConst.channelIdReadAloud)
+                .setSmallIcon(R.drawable.ic_volume_up)
+                .setSubText(getString(R.string.read_aloud))
+                .setOngoing(true)
+                .setContentTitle(nTitle)
+                .setContentText(nSubtitle)
+                .setContentIntent(
+                    activityPendingIntent<ReadBookActivity>("activity")
+                )
+            kotlin.runCatching {
+                ImageLoader
+                    .loadBitmap(this@BaseReadAloudService, ReadBook.book?.getDisplayCover())
+                    .submit()
+                    .get()
+            }.getOrElse {
+                BitmapFactory.decodeResource(resources, R.drawable.icon_read_book)
+            }.let {
+                builder.setLargeIcon(it)
+            }
+            if (pause) {
+                builder.addAction(
+                    R.drawable.ic_play_24dp,
+                    getString(R.string.resume),
+                    aloudServicePendingIntent(IntentAction.resume)
+                )
+            } else {
+                builder.addAction(
+                    R.drawable.ic_pause_24dp,
+                    getString(R.string.pause),
+                    aloudServicePendingIntent(IntentAction.pause)
+                )
+            }
+            builder.addAction(
+                R.drawable.ic_stop_black_24dp,
+                getString(R.string.stop),
+                aloudServicePendingIntent(IntentAction.stop)
+            )
+            builder.addAction(
+                R.drawable.ic_time_add_24dp,
+                getString(R.string.set_timer),
+                aloudServicePendingIntent(IntentAction.addTimer)
+            )
+            builder.setStyle(
+                androidx.media.app.NotificationCompat.MediaStyle()
+                    .setShowActionsInCompactView(0, 1, 2)
+            )
+            builder.setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            builder
+        }.onSuccess {
+            startForeground(AppConst.notificationIdRead, it.build())
+        }
+    }
+
+    abstract fun aloudServicePendingIntent(actionStr: String): PendingIntent?
+
+    open fun nextChapter() {
+        ReadBook.upReadTime()
+        if (!ReadBook.moveToNextChapter(true)) {
+            stopSelf()
+        }
+    }
+
+}

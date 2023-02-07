@@ -1,0 +1,639 @@
+package com.renaisn.reader.ui.book.source.manage
+
+import android.annotation.SuppressLint
+import android.os.Bundle
+import android.view.*
+import androidx.activity.viewModels
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.widget.PopupMenu
+import androidx.appcompat.widget.SearchView
+import androidx.core.os.bundleOf
+import androidx.recyclerview.widget.ItemTouchHelper
+import com.google.android.material.snackbar.Snackbar
+import com.renaisn.reader.R
+import com.renaisn.reader.base.VMBaseActivity
+import com.renaisn.reader.constant.AppLog
+import com.renaisn.reader.constant.EventBus
+import com.renaisn.reader.data.appDb
+import com.renaisn.reader.data.entities.BookSource
+import com.renaisn.reader.databinding.ActivityBookSourceBinding
+import com.renaisn.reader.databinding.DialogEditTextBinding
+import com.renaisn.reader.help.DirectLinkUpload
+import com.renaisn.reader.help.config.LocalConfig
+import com.renaisn.reader.lib.dialogs.alert
+import com.renaisn.reader.lib.theme.primaryColor
+import com.renaisn.reader.lib.theme.primaryTextColor
+import com.renaisn.reader.model.CheckSource
+import com.renaisn.reader.model.Debug
+import com.renaisn.reader.ui.association.ImportBookSourceDialog
+import com.renaisn.reader.ui.book.search.SearchActivity
+import com.renaisn.reader.ui.book.search.SearchScope
+import com.renaisn.reader.ui.book.source.debug.BookSourceDebugActivity
+import com.renaisn.reader.ui.book.source.edit.BookSourceEditActivity
+import com.renaisn.reader.ui.book.toc.rule.TxtTocRuleActivity
+import com.renaisn.reader.ui.config.CheckSourceConfig
+import com.renaisn.reader.ui.document.HandleFileContract
+import com.renaisn.reader.ui.qrcode.QrCodeResult
+import com.renaisn.reader.ui.widget.SelectActionBar
+import com.renaisn.reader.ui.widget.dialog.TextDialog
+import com.renaisn.reader.ui.widget.recycler.DragSelectTouchHelper
+import com.renaisn.reader.ui.widget.recycler.ItemTouchCallback
+import com.renaisn.reader.ui.widget.recycler.VerticalDivider
+import com.renaisn.reader.utils.*
+import com.renaisn.reader.utils.viewbindingdelegate.viewBinding
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+
+/**
+ * 书源管理界面
+ */
+class BookSourceActivity : VMBaseActivity<ActivityBookSourceBinding, BookSourceViewModel>(),
+    PopupMenu.OnMenuItemClickListener,
+    BookSourceAdapter.CallBack,
+    SelectActionBar.CallBack,
+    SearchView.OnQueryTextListener {
+    override val binding by viewBinding(ActivityBookSourceBinding::inflate)
+    override val viewModel by viewModels<BookSourceViewModel>()
+    private val importRecordKey = "bookSourceRecordKey"
+    private val adapter by lazy { BookSourceAdapter(this, this) }
+    private val searchView: SearchView by lazy {
+        binding.titleBar.findViewById(R.id.search_view)
+    }
+    private var sourceFlowJob: Job? = null
+    private val groups = linkedSetOf<String>()
+    private var groupMenu: SubMenu? = null
+    private var sort = Sort.Default
+    private var sortAscending = true
+    private var snackBar: Snackbar? = null
+    private var isPaused = false
+    private val qrResult = registerForActivityResult(QrCodeResult()) {
+        it ?: return@registerForActivityResult
+        showDialogFragment(ImportBookSourceDialog(it))
+    }
+    private val importDoc = registerForActivityResult(HandleFileContract()) {
+        it.uri?.let { uri ->
+            showDialogFragment(ImportBookSourceDialog(uri.toString()))
+        }
+    }
+    private val exportDir = registerForActivityResult(HandleFileContract()) {
+        it.uri?.let { uri ->
+            alert(R.string.export_success) {
+                if (uri.toString().isAbsUrl()) {
+                    DirectLinkUpload.getSummary()?.let { summary ->
+                        setMessage(summary)
+                    }
+                }
+                val alertBinding = DialogEditTextBinding.inflate(layoutInflater).apply {
+                    editView.hint = getString(R.string.path)
+                    editView.setText(uri.toString())
+                }
+                customView { alertBinding.root }
+                okButton {
+                    sendToClip(uri.toString())
+                }
+            }
+        }
+    }
+
+    override fun onActivityCreated(savedInstanceState: Bundle?) {
+        initRecyclerView()
+        initSearchView()
+        upBookSource()
+        initLiveDataGroup()
+        initSelectActionBar()
+        resumeCheckSource()
+        if (!LocalConfig.bookSourcesHelpVersionIsLast) {
+            showHelp()
+        }
+    }
+
+    override fun onCompatCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.book_source, menu)
+        return super.onCompatCreateOptionsMenu(menu)
+    }
+
+    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
+        groupMenu = menu.findItem(R.id.menu_group)?.subMenu
+        groupMenu?.findItem(R.id.action_sort)?.subMenu
+            ?.setGroupCheckable(R.id.menu_group_sort, true, true)
+        upGroupMenu()
+        return super.onPrepareOptionsMenu(menu)
+    }
+
+    override fun onCompatOptionsItemSelected(item: MenuItem): Boolean {
+        when (item.itemId) {
+            R.id.menu_add_book_source -> startActivity<BookSourceEditActivity>()
+            R.id.menu_import_qr -> qrResult.launch()
+            R.id.menu_group_manage -> showDialogFragment<GroupManageDialog>()
+            R.id.menu_import_local -> importDoc.launch {
+                mode = HandleFileContract.FILE
+                allowExtensions = arrayOf("txt", "json")
+            }
+            R.id.menu_import_onLine -> showImportDialog()
+            R.id.menu_text_toc_rule -> startActivity<TxtTocRuleActivity>()
+            R.id.menu_sort_manual -> {
+                item.isChecked = true
+                sortCheck(Sort.Default)
+                upBookSource(searchView.query?.toString())
+            }
+            R.id.menu_sort_auto -> {
+                item.isChecked = true
+                sortCheck(Sort.Weight)
+                upBookSource(searchView.query?.toString())
+            }
+            R.id.menu_sort_name -> {
+                item.isChecked = true
+                sortCheck(Sort.Name)
+                upBookSource(searchView.query?.toString())
+            }
+            R.id.menu_sort_url -> {
+                item.isChecked = true
+                sortCheck(Sort.Url)
+                upBookSource(searchView.query?.toString())
+            }
+            R.id.menu_sort_time -> {
+                item.isChecked = true
+                sortCheck(Sort.Update)
+                upBookSource(searchView.query?.toString())
+            }
+            R.id.menu_sort_respondTime -> {
+                item.isChecked = true
+                sortCheck(Sort.Respond)
+                upBookSource(searchView.query?.toString())
+            }
+            R.id.menu_sort_enable -> {
+                item.isChecked = true
+                sortCheck(Sort.Enable)
+                upBookSource(searchView.query?.toString())
+            }
+            R.id.menu_enabled_group -> {
+                searchView.setQuery(getString(R.string.enabled), true)
+            }
+            R.id.menu_disabled_group -> {
+                searchView.setQuery(getString(R.string.disabled), true)
+            }
+            R.id.menu_group_login -> {
+                searchView.setQuery(getString(R.string.need_login), true)
+            }
+            R.id.menu_group_null -> {
+                searchView.setQuery(getString(R.string.no_group), true)
+            }
+            R.id.menu_help -> showHelp()
+        }
+        if (item.groupId == R.id.source_group) {
+            searchView.setQuery("group:${item.title}", true)
+        }
+        return super.onCompatOptionsItemSelected(item)
+    }
+
+    private fun initRecyclerView() {
+        binding.recyclerView.setEdgeEffectColor(primaryColor)
+        binding.recyclerView.addItemDecoration(VerticalDivider(this))
+        binding.recyclerView.adapter = adapter
+        // When this page is opened, it is in selection mode
+        val dragSelectTouchHelper =
+            DragSelectTouchHelper(adapter.dragSelectCallback).setSlideArea(16, 50)
+        dragSelectTouchHelper.attachToRecyclerView(binding.recyclerView)
+        dragSelectTouchHelper.activeSlideSelect()
+        // Note: need judge selection first, so add ItemTouchHelper after it.
+        val itemTouchCallback = ItemTouchCallback(adapter)
+        itemTouchCallback.isCanDrag = true
+        ItemTouchHelper(itemTouchCallback).attachToRecyclerView(binding.recyclerView)
+    }
+
+    private fun initSearchView() {
+        searchView.applyTint(primaryTextColor)
+        searchView.onActionViewExpanded()
+        searchView.queryHint = getString(R.string.search_book_source)
+        searchView.clearFocus()
+        searchView.setOnQueryTextListener(this)
+    }
+
+
+    private fun upBookSource(searchKey: String? = null) {
+        sourceFlowJob?.cancel()
+        sourceFlowJob = launch {
+            when {
+                searchKey.isNullOrEmpty() -> {
+                    appDb.bookSourceDao.flowAll()
+                }
+                searchKey == getString(R.string.enabled) -> {
+                    appDb.bookSourceDao.flowEnabled()
+                }
+                searchKey == getString(R.string.disabled) -> {
+                    appDb.bookSourceDao.flowDisabled()
+                }
+                searchKey == getString(R.string.need_login) -> {
+                    appDb.bookSourceDao.flowLogin()
+                }
+                searchKey == getString(R.string.no_group) -> {
+                    appDb.bookSourceDao.flowNoGroup()
+                }
+                searchKey.startsWith("group:") -> {
+                    val key = searchKey.substringAfter("group:")
+                    appDb.bookSourceDao.flowGroupSearch(key)
+                }
+                else -> {
+                    appDb.bookSourceDao.flowSearch(searchKey)
+                }
+            }.conflate().map { data ->
+                if (sortAscending) when (sort) {
+                    Sort.Weight -> data.sortedBy { it.weight }
+                    Sort.Name -> data.sortedWith { o1, o2 ->
+                        o1.bookSourceName.cnCompare(o2.bookSourceName)
+                    }
+                    Sort.Url -> data.sortedBy { it.bookSourceUrl }
+                    Sort.Update -> data.sortedByDescending { it.lastUpdateTime }
+                    Sort.Respond -> data.sortedBy { it.respondTime }
+                    Sort.Enable -> data.sortedWith { o1, o2 ->
+                        var sort = -o1.enabled.compareTo(o2.enabled)
+                        if (sort == 0) {
+                            sort = o1.bookSourceName.cnCompare(o2.bookSourceName)
+                        }
+                        sort
+                    }
+                    else -> data
+                }
+                else when (sort) {
+                    Sort.Weight -> data.sortedByDescending { it.weight }
+                    Sort.Name -> data.sortedWith { o1, o2 ->
+                        o2.bookSourceName.cnCompare(o1.bookSourceName)
+                    }
+                    Sort.Url -> data.sortedByDescending { it.bookSourceUrl }
+                    Sort.Update -> data.sortedBy { it.lastUpdateTime }
+                    Sort.Respond -> data.sortedByDescending { it.respondTime }
+                    Sort.Enable -> data.sortedWith { o1, o2 ->
+                        var sort = o1.enabled.compareTo(o2.enabled)
+                        if (sort == 0) {
+                            sort = o1.bookSourceName.cnCompare(o2.bookSourceName)
+                        }
+                        sort
+                    }
+                    else -> data.reversed()
+                }
+            }.catch {
+                AppLog.put("书源界面更新书源出错", it)
+            }.conflate().collect { data ->
+                adapter.setItems(data, adapter.diffItemCallback)
+                delay(500)
+            }
+        }
+    }
+
+    private fun showHelp() {
+        val text = String(assets.open("help/SourceMBookHelp.md").readBytes())
+        showDialogFragment(TextDialog(text, TextDialog.Mode.MD))
+    }
+
+    private fun sortCheck(sort: Sort) {
+        if (this.sort == sort) {
+            sortAscending = !sortAscending
+        } else {
+            sortAscending = true
+            this.sort = sort
+        }
+    }
+
+    private fun initLiveDataGroup() {
+        launch {
+            appDb.bookSourceDao.flowGroups().conflate().collect {
+                groups.clear()
+                groups.addAll(it)
+                upGroupMenu()
+            }
+        }
+    }
+
+    override fun selectAll(selectAll: Boolean) {
+        if (selectAll) {
+            adapter.selectAll()
+        } else {
+            adapter.revertSelection()
+        }
+    }
+
+    override fun revertSelection() {
+        adapter.revertSelection()
+    }
+
+    override fun onClickSelectBarMainAction() {
+        alert(titleResource = R.string.draw, messageResource = R.string.sure_del) {
+            yesButton { viewModel.del(*adapter.selection.toTypedArray()) }
+            noButton()
+        }
+    }
+
+    private fun initSelectActionBar() {
+        binding.selectActionBar.setMainActionText(R.string.delete)
+        binding.selectActionBar.inflateMenu(R.menu.book_source_sel)
+        binding.selectActionBar.setOnMenuItemClickListener(this)
+        binding.selectActionBar.setCallBack(this)
+    }
+
+    override fun onMenuItemClick(item: MenuItem?): Boolean {
+        when (item?.itemId) {
+            R.id.menu_enable_selection -> viewModel.enableSelection(adapter.selection)
+            R.id.menu_disable_selection -> viewModel.disableSelection(adapter.selection)
+            R.id.menu_enable_explore -> viewModel.enableSelectExplore(adapter.selection)
+            R.id.menu_disable_explore -> viewModel.disableSelectExplore(adapter.selection)
+            R.id.menu_check_source -> checkSource()
+            R.id.menu_top_sel -> viewModel.topSource(*adapter.selection.toTypedArray())
+            R.id.menu_bottom_sel -> viewModel.bottomSource(*adapter.selection.toTypedArray())
+            R.id.menu_add_group -> selectionAddToGroups()
+            R.id.menu_remove_group -> selectionRemoveFromGroups()
+            R.id.menu_export_selection -> viewModel.saveToFile(adapter.selection) { file ->
+                exportDir.launch {
+                    mode = HandleFileContract.EXPORT
+                    fileData = Triple("bookSource.json", file, "application/json")
+                }
+            }
+            R.id.menu_share_source -> viewModel.saveToFile(adapter.selection) {
+                share(it)
+            }
+            R.id.menu_check_selected_interval -> adapter.checkSelectedInterval()
+        }
+        return true
+    }
+
+    @SuppressLint("InflateParams")
+    private fun checkSource() {
+        val dialog = alert(titleResource = R.string.search_book_key) {
+            val alertBinding = DialogEditTextBinding.inflate(layoutInflater).apply {
+                editView.hint = "search word"
+                editView.setText(CheckSource.keyword)
+            }
+            customView { alertBinding.root }
+            okButton {
+                keepScreenOn(true)
+                alertBinding.editView.text?.toString()?.let {
+                    if (it.isNotEmpty()) {
+                        CheckSource.keyword = it
+                    }
+                }
+                CheckSource.start(this@BookSourceActivity, adapter.selection)
+                val firstItem = adapter.getItems().indexOf(adapter.selection.firstOrNull())
+                val lastItem = adapter.getItems().indexOf(adapter.selection.lastOrNull())
+                Debug.isChecking = firstItem >= 0 && lastItem >= 0
+                checkMessageRefreshJob(firstItem, lastItem).start()
+            }
+            neutralButton(R.string.check_source_config)
+            cancelButton()
+        }
+        //手动设置监听 避免点击打开校验设置后对话框关闭
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setOnClickListener {
+            showDialogFragment<CheckSourceConfig>()
+        }
+    }
+
+    private fun resumeCheckSource() {
+        if (!Debug.isChecking) {
+            return
+        }
+        keepScreenOn(true)
+        CheckSource.resume(this)
+        checkMessageRefreshJob(0, 0).start()
+    }
+
+    @SuppressLint("InflateParams")
+    private fun selectionAddToGroups() {
+        alert(titleResource = R.string.add_group) {
+            val alertBinding = DialogEditTextBinding.inflate(layoutInflater).apply {
+                editView.setHint(R.string.group_name)
+                editView.setFilterValues(groups.toList())
+                editView.dropDownHeight = 180.dpToPx()
+            }
+            customView { alertBinding.root }
+            okButton {
+                alertBinding.editView.text?.toString()?.let {
+                    if (it.isNotEmpty()) {
+                        viewModel.selectionAddToGroups(adapter.selection, it)
+                    }
+                }
+            }
+            cancelButton()
+        }
+    }
+
+    @SuppressLint("InflateParams")
+    private fun selectionRemoveFromGroups() {
+        alert(titleResource = R.string.remove_group) {
+            val alertBinding = DialogEditTextBinding.inflate(layoutInflater).apply {
+                editView.setHint(R.string.group_name)
+                editView.setFilterValues(groups.toList())
+                editView.dropDownHeight = 180.dpToPx()
+            }
+            customView { alertBinding.root }
+            okButton {
+                alertBinding.editView.text?.toString()?.let {
+                    if (it.isNotEmpty()) {
+                        viewModel.selectionRemoveFromGroups(adapter.selection, it)
+                    }
+                }
+            }
+            cancelButton()
+        }
+    }
+
+    private fun upGroupMenu() = groupMenu?.let { menu ->
+        menu.removeGroup(R.id.source_group)
+        groups.forEach {
+            menu.add(R.id.source_group, Menu.NONE, Menu.NONE, it)
+        }
+    }
+
+    @SuppressLint("InflateParams")
+    private fun showImportDialog() {
+        val aCache = ACache.get(cacheDir = false)
+        val cacheUrls: MutableList<String> = aCache
+            .getAsString(importRecordKey)
+            ?.splitNotBlank(",")
+            ?.toMutableList() ?: mutableListOf()
+        alert(titleResource = R.string.import_on_line) {
+            val alertBinding = DialogEditTextBinding.inflate(layoutInflater).apply {
+                editView.hint = "url"
+                editView.setFilterValues(cacheUrls)
+                editView.delCallBack = {
+                    cacheUrls.remove(it)
+                    aCache.put(importRecordKey, cacheUrls.joinToString(","))
+                }
+            }
+            customView { alertBinding.root }
+            okButton {
+                val text = alertBinding.editView.text?.toString()
+                text?.let {
+                    if (!cacheUrls.contains(it)) {
+                        cacheUrls.add(0, it)
+                        aCache.put(importRecordKey, cacheUrls.joinToString(","))
+                    }
+                    showDialogFragment(ImportBookSourceDialog(it))
+                }
+            }
+            cancelButton()
+        }
+    }
+
+    override fun observeLiveBus() {
+        observeEvent<String>(EventBus.CHECK_SOURCE) { msg ->
+            snackBar?.setText(msg) ?: let {
+                snackBar = Snackbar
+                    .make(binding.root, msg, Snackbar.LENGTH_INDEFINITE)
+                    .setAction(R.string.cancel) {
+                        CheckSource.stop(this)
+                        Debug.finishChecking()
+                        adapter.notifyItemRangeChanged(
+                            0,
+                            adapter.itemCount,
+                            bundleOf(Pair("checkSourceMessage", null))
+                        )
+                    }.apply { show() }
+            }
+        }
+        observeEvent<Int>(EventBus.CHECK_SOURCE_DONE) {
+            keepScreenOn(false)
+            snackBar?.dismiss()
+            snackBar = null
+            groups.map { group ->
+                if (group.contains("失效") && searchView.query.isEmpty()) {
+                    searchView.setQuery("失效", true)
+                    toastOnUi("发现有失效书源，已为您自动筛选！")
+                }
+            }
+        }
+    }
+
+    private fun checkMessageRefreshJob(firstItem: Int, lastItem: Int): Job {
+        return async(start = CoroutineStart.LAZY) {
+            flow {
+                while (true) {
+                    emit(Debug.isChecking)
+                    delay(300L)
+                }
+            }.collect {
+                if (SystemUtils.isScreenOn() && !isPaused) {
+                    if (lastItem == 0) {
+                        adapter.notifyItemRangeChanged(
+                            0,
+                            adapter.itemCount,
+                            bundleOf(Pair("checkSourceMessage", null))
+                        )
+                    } else {
+                        adapter.notifyItemRangeChanged(
+                            firstItem,
+                            lastItem + 1,
+                            bundleOf(Pair("checkSourceMessage", null))
+                        )
+                    }
+                }
+                if (!it) {
+                    this.cancel()
+                }
+            }
+        }
+    }
+
+    /**
+     * 保持亮屏
+     */
+    private fun keepScreenOn(on: Boolean) {
+        val isScreenOn =
+            (window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0
+        if (on == isScreenOn) return
+        if (on) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        isPaused = true
+    }
+
+    override fun onResume() {
+        super.onResume()
+        isPaused = false
+    }
+
+    override fun upCountView() {
+        binding.selectActionBar
+            .upCountView(adapter.selection.size, adapter.itemCount)
+    }
+
+    override fun onQueryTextChange(newText: String?): Boolean {
+        newText?.let {
+            upBookSource(it)
+        }
+        return false
+    }
+
+    override fun onQueryTextSubmit(query: String?): Boolean {
+        return false
+    }
+
+    override fun del(bookSource: BookSource) {
+        alert(R.string.draw) {
+            setMessage(getString(R.string.sure_del) + "\n" + bookSource.bookSourceName)
+            noButton()
+            yesButton {
+                viewModel.del(bookSource)
+            }
+        }
+    }
+
+    override fun update(vararg bookSource: BookSource) {
+        viewModel.update(*bookSource)
+    }
+
+    override fun edit(bookSource: BookSource) {
+        startActivity<BookSourceEditActivity> {
+            putExtra("sourceUrl", bookSource.bookSourceUrl)
+        }
+    }
+
+    override fun upOrder() {
+        viewModel.upOrder()
+    }
+
+    override fun toTop(bookSource: BookSource) {
+        viewModel.topSource(bookSource)
+    }
+
+    override fun toBottom(bookSource: BookSource) {
+        viewModel.bottomSource(bookSource)
+    }
+
+    override fun searchBook(bookSource: BookSource) {
+        startActivity<SearchActivity> {
+            putExtra("searchScope", SearchScope(bookSource).toString())
+        }
+    }
+
+    override fun debug(bookSource: BookSource) {
+        startActivity<BookSourceDebugActivity> {
+            putExtra("key", bookSource.bookSourceUrl)
+        }
+    }
+
+    override fun finish() {
+        if (searchView.query.isNullOrEmpty()) {
+            super.finish()
+        } else {
+            searchView.setQuery("", true)
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (!Debug.isChecking) {
+            Debug.debugMessageMap.clear()
+        }
+    }
+
+    enum class Sort {
+        Default, Name, Url, Weight, Update, Enable, Respond
+    }
+}

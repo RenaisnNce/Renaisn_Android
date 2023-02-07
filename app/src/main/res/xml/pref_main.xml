@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.preference.PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:divider="@color/transparent"
+    app:allowDividerAbove="false"
+    app:allowDividerBelow="false">
+
+    <com.renaisn.reader.lib.prefs.Preference
+        android:key="bookSourceManage"
+        android:title="@string/book_source_manage"
+        android:summary="@string/book_source_manage_desc"
+        android:icon="@drawable/ic_cfg_source"
+        app:iconSpaceReserved="false" />
+
+
+    <com.renaisn.reader.lib.prefs.NameListPreference
+        android:defaultValue="false"
+        android:entries="@array/theme_mode"
+        android:entryValues="@array/theme_mode_v"
+        android:key="themeMode"
+        android:title="@string/theme_mode"
+        android:summary="@string/theme_mode_desc"
+        android:icon="@drawable/ic_cfg_theme"
+        app:iconSpaceReserved="false"
+        app:allowDividerBelow="false"/>
+
+
+    <com.renaisn.reader.lib.prefs.PreferenceCategory
+        android:title="@string/setting"
+        android:key="settingCategory"
+        app:allowDividerAbove="true"
+        app:allowDividerBelow="false"
+        app:iconSpaceReserved="false">
+
+        <com.renaisn.reader.lib.prefs.Preference
+            android:key="web_dav_setting"
+            android:summary="@string/web_dav_set_import_old"
+            android:title="@string/backup_restore"
+            android:icon="@drawable/ic_cfg_backup"
+            app:iconSpaceReserved="false" />
+
+
+        <com.renaisn.reader.lib.prefs.Preference
+            android:key="setting"
+            android:summary="@string/other_setting_s"
+            android:title="@string/other_setting"
+            android:icon="@drawable/ic_cfg_other"
+            app:allowDividerBelow="false"
+            app:iconSpaceReserved="false" />
+
+    </com.renaisn.reader.lib.prefs.PreferenceCategory>
+
+    <com.renaisn.reader.lib.prefs.PreferenceCategory
+        android:title="@string/other"
+        android:key="aboutCategory"
+        app:allowDividerAbove="true"
+        app:allowDividerBelow="false"
+        app:iconSpaceReserved="false"
+        app:layout="@layout/view_preference_category">
+
+        <com.renaisn.reader.lib.prefs.Preference
+            android:key="bookmark"
+            android:title="@string/bookmark"
+            android:summary="@string/all_bookmark"
+            android:icon="@drawable/ic_bookmark"
+            app:iconSpaceReserved="false" />
+
+        <com.renaisn.reader.lib.prefs.Preference
+            android:key="readRecord"
+            android:title="@string/read_record"
+            android:summary="@string/read_record_summary"
+            android:icon="@drawable/ic_history"
+            app:iconSpaceReserved="false" />
+    </com.renaisn.reader.lib.prefs.PreferenceCategory>
+
+</androidx.preference.PreferenceScreen>

@@ -1,0 +1,253 @@
+plugins {
+    id "com.android.application"
+    id 'org.jetbrains.kotlin.android'
+    id 'kotlin-parcelize'
+    id 'kotlin-kapt'
+    //id "com.google.gms.google-services"
+}
+apply from: 'download.gradle'
+
+static def releaseTime() {
+    return new Date().format("yyyy-MM-dd-HH-mm", TimeZone.getTimeZone("GMT+8"))
+}
+
+def name = "renaisn"
+//def version = "3." + releaseTime()
+def gitCommits = Integer.parseInt('git rev-list HEAD --count'.execute().text.trim())
+
+android {
+    compileSdk = compile_sdk_version
+    buildToolsVersion = build_tool_version
+    namespace 'com.renaisn.reader'
+    kotlinOptions {
+        jvmTarget = "11"
+    }
+
+    signingConfigs {
+        if (project.hasProperty("RELEASE_STORE_FILE")) {
+            myConfig {
+                storeFile file(RELEASE_STORE_FILE)
+                storePassword RELEASE_STORE_PASSWORD
+                keyAlias RELEASE_KEY_ALIAS
+                keyPassword RELEASE_KEY_PASSWORD
+                v1SigningEnabled true
+                v2SigningEnabled true
+                enableV3Signing = true
+                enableV4Signing = true
+            }
+        }
+    }
+    defaultConfig {
+        applicationId "com.renaisn.reader"
+        minSdk 21
+        targetSdk 33
+        versionCode 100
+        versionName "1.0.0.beta"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        project.ext.set("archivesBaseName", name + "_" + version)
+        multiDexEnabled true
+
+        buildConfigField "String", "Cronet_Version", "\"$CronetVersion\""
+        buildConfigField "String", "Cronet_Main_Version", "\"$CronetMainVersion\""
+
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments += [
+                        "room.incremental"     : "true",
+                        "room.expandProjection": "true",
+                        "room.schemaLocation"  : "$projectDir/schemas".toString()
+                ]
+            }
+        }
+    }
+    buildFeatures {
+        buildConfig true
+        viewBinding true
+    }
+    buildTypes {
+        release {
+            if (project.hasProperty("RELEASE_STORE_FILE")) {
+                signingConfig signingConfigs.myConfig
+            }
+            //applicationIdSuffix '.release'
+
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+
+            if (project.hasProperty("RELEASE_STORE_FILE")) {
+                signingConfig signingConfigs.myConfig
+            }
+            //applicationIdSuffix '.debug'
+            versionNameSuffix 'debug'
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    android.applicationVariants.all { variant ->
+        variant.outputs.all {
+            def flavor = variant.productFlavors[0].name
+            outputFileName = "${name}_${flavor}_${defaultConfig.versionName}.apk"
+        }
+    }
+
+    flavorDimensions.add("mode")
+    productFlavors {
+        app {
+            dimension "mode"
+            manifestPlaceholders.put("APP_CHANNEL_VALUE", "app")
+        }
+//        google {
+//            dimension "mode"
+//            applicationId "io.legado.play"
+//            manifestPlaceholders.put("APP_CHANNEL_VALUE", "google")
+//        }
+    }
+    compileOptions {
+        // Flag to enable support for the new language APIs
+        coreLibraryDesugaringEnabled true
+        // Sets Java compatibility to Java 11
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    sourceSets {
+        // Adds exported schema location as test app assets.
+        androidTest.assets.srcDirs += files("$projectDir/schemas".toString())
+    }
+    lint {
+        checkDependencies true
+    }
+    tasks.withType(JavaCompile) {
+        //options.compilerArgs << "-Xlint:unchecked"
+    }
+}
+
+dependencies {
+    compileOnly "com.android.tools.build:gradle:$agp_version"
+    //noinspection GradleDependency,GradlePackageUpdate
+    coreLibraryDesugaring('com.android.tools:desugar_jdk_libs:1.2.2')
+    testImplementation('junit:junit:4.13.2')
+    androidTestImplementation('androidx.test:runner:1.5.2')
+    androidTestImplementation('androidx.test.espresso:espresso-core:3.5.1')
+    implementation('androidx.multidex:multidex:2.0.1')
+    //kotlin
+    //noinspection GradleDependency,DifferentStdlibGradleVersion
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version")
+    //Kotlin反射
+    //noinspection GradleDependency,DifferentStdlibGradleVersion
+    implementation("org.jetbrains.kotlin:kotlin-reflect:$kotlin_version")
+    //协程
+    def coroutines_version = '1.6.4'
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines_version")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutines_version")
+
+    //图像处理库Toolkit
+    implementation('com.github.android:renderscript-intrinsics-replacement-toolkit:b6363490c3')
+
+    //androidX
+    implementation('androidx.core:core-ktx:1.9.0')
+    implementation('androidx.appcompat:appcompat:1.6.0')
+    implementation('androidx.activity:activity-ktx:1.6.1')
+    implementation('androidx.fragment:fragment-ktx:1.5.5')
+    implementation('androidx.preference:preference-ktx:1.2.0')
+    implementation('androidx.constraintlayout:constraintlayout:2.1.4')
+    implementation('androidx.swiperefreshlayout:swiperefreshlayout:1.1.0')
+    implementation('androidx.viewpager2:viewpager2:1.0.0')
+    implementation('androidx.webkit:webkit:1.6.0')
+
+    //google
+    implementation('com.google.android.material:material:1.8.0')
+    implementation('com.google.android.flexbox:flexbox:3.0.0')
+    implementation('com.google.code.gson:gson:2.10.1')
+
+    //lifecycle
+    def lifecycle_version = '2.5.1'
+    implementation("androidx.lifecycle:lifecycle-common-java8:$lifecycle_version")
+    implementation("androidx.lifecycle:lifecycle-service:$lifecycle_version")
+
+    //media
+    implementation("androidx.media:media:1.6.0")
+    implementation("com.google.android.exoplayer:exoplayer-core:$exoplayer_version")
+    implementation("com.google.android.exoplayer:extension-okhttp:$exoplayer_version")
+
+    //Splitties
+    implementation("com.louiscad.splitties:splitties-appctx:$splitties_version")
+    implementation("com.louiscad.splitties:splitties-systemservices:$splitties_version")
+    implementation("com.louiscad.splitties:splitties-views:$splitties_version")
+
+    //room
+    implementation("androidx.room:room-runtime:$room_version")
+    implementation("androidx.room:room-ktx:$room_version")
+    kapt("androidx.room:room-compiler:$room_version")
+    androidTestImplementation("androidx.room:room-testing:$room_version")
+
+    //liveEventBus
+    implementation('io.github.jeremyliao:live-event-bus-x:1.8.0')
+
+    //规则相关
+    implementation('org.jsoup:jsoup:1.15.3')
+    implementation('com.jayway.jsonpath:json-path:2.7.0')
+    implementation('cn.wanghaomiao:JsoupXpath:2.5.1')
+    implementation(project(path: ':epublib'))
+
+    //JS rhino
+    //implementation('com.github.gedoor:rhino-android:1.8')
+    implementation(fileTree(dir: 'lib', include: ['rhino-*.jar']))
+
+    //网络
+    implementation('com.squareup.okhttp3:okhttp:4.10.0')
+    appImplementation(fileTree(dir: 'cronetlib', include: ['*.jar', '*.aar']))
+
+    //Glide
+    def glideVersion = "4.14.2"
+    implementation("com.github.bumptech.glide:glide:$glideVersion")
+    kapt("com.github.bumptech.glide:compiler:$glideVersion")
+
+    //Svg
+    implementation("com.caverock:androidsvg-aar:1.4")
+    //Glide svg plugin
+    implementation("com.github.qoqa:glide-svg:4.0.2")
+
+    //webServer
+    def nanoHttpdVersion = "2.3.1"
+    implementation("org.nanohttpd:nanohttpd:$nanoHttpdVersion")
+    implementation("org.nanohttpd:nanohttpd-websocket:$nanoHttpdVersion")
+
+    //二维码
+    implementation('com.github.jenly1314:zxing-lite:2.3.0')
+
+    //颜色选择
+    implementation('com.jaredrummler:colorpicker:1.1.0')
+
+    //apache
+    implementation('org.apache.commons:commons-text:1.10.0')
+
+    //MarkDown
+    def markwonVersion = "4.6.2"
+    implementation("io.noties.markwon:core:$markwonVersion")
+    implementation("io.noties.markwon:image-glide:$markwonVersion")
+    implementation("io.noties.markwon:ext-tables:$markwonVersion")
+    implementation("io.noties.markwon:html:$markwonVersion")
+
+    //转换繁体
+    implementation('com.github.liuyueyi.quick-chinese-transfer:quick-transfer-core:0.2.10')
+
+    //加解密类库,有些书源使用
+    //noinspection GradleDependency,GradlePackageUpdate
+    implementation('cn.hutool:hutool-crypto:5.8.11')
+
+    //firebase, 崩溃统计和性能统计, 会导致共存版本崩溃
+    //implementation platform('com.google.firebase:firebase-bom:30.0.1')
+    //implementation 'com.google.firebase:firebase-analytics-ktx:21.0.0'
+    //implementation 'com.google.firebase:firebase-perf-ktx:20.0.6'
+
+    //LeakCanary, 内存泄露检测
+    //debugImplementation('com.squareup.leakcanary:leakcanary-android:2.7')
+
+    //com.github.AmrDeveloper:CodeView代码编辑已集成到应用内
+    //epubLib集成到应用内
+}
