@@ -18,7 +18,7 @@ Renaisn将围绕Read&Earn 概念，用户可以在使用Renaisn的同时并赚�
 >Renaisn不提供内容，需要您自己手动添加，例如导入书源等。
 
 # Function-主要功能 [![](https://img.shields.io/badge/-Function-F5F5F5.svg)](#Function-主要功能-)
-<font size=4>免费阅读</font>
+<font size=5>免费阅读</font><br>
 1.支持多内容来源，自定义内容来源，包括但不限于书籍、动漫等等。<br>
 2.支持语音朗读，离线缓存，多设备云同步。<br>
 3.支持搜索及发现，自定义查找内容更加方便。<br>
