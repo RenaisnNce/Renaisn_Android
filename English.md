@@ -14,9 +14,8 @@ Renaisn will be built around the concept of Read&Earn, where users can earn toke
 
 [![](https://img.shields.io/badge/-Contents:-696969.svg)](#contents) [![](https://img.shields.io/badge/-Function-F5F5F5.svg)](#Function-) [![](https://img.shields.io/badge/-Download-F5F5F5.svg)](#Download-) [![](https://img.shields.io/badge/-Community-F5F5F5.svg)](#Community-) 
 
->Renaisn can’t provide the content, you need to add it manually, such as importing book sources, etc.
+>Renaisn can’t provide the content, you need to add it manually, such as importing book sources, etc.<br>
 >
-><br>
 
 # Function [![](https://img.shields.io/badge/-Function-F5F5F5.svg)](#Function-)
 
@@ -64,6 +63,6 @@ Free reading
 
 
 
-# Say something-想说的话
+# Say something
 
 We redefine the spirit of Internet sharing and follow the original intention of spreading culture freely without borders, providing unlimited content support for global users through Web3.
