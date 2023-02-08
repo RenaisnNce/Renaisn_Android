@@ -11,16 +11,14 @@ Renaisn
 <br>
 Renaisn将围绕Read&Earn 概念，用户可以在使用Renaisn的同时并赚取代币。Renaisn的目标旨在改变千万用户的阅读习惯，未来将会是全球最⼤的免费内容分享平台，⽆数的使用者将在这⾥通过 Web3.0连接世界。
 </div>
-
+<br>
 
 [![](https://img.shields.io/badge/-Contents:-696969.svg)](#contents) [![](https://img.shields.io/badge/-Function-F5F5F5.svg)](#Function-主要功能-) [![](https://img.shields.io/badge/-Download-F5F5F5.svg)](#Download-下载-) [![](https://img.shields.io/badge/-Community-F5F5F5.svg)](#Community-交流社区-) 
 
 >Renaisn不提供内容，需要您自己手动添加，例如导入书源等。
 
 # Function-主要功能 [![](https://img.shields.io/badge/-Function-F5F5F5.svg)](#Function-主要功能-)
-[English](English.md)
 
-<details><summary>中文</summary>
     <h4>免费阅读</h4><br>
 1.支持多内容来源，自定义内容来源，包括但不限于书籍、动漫等等。<br>
 2.支持语音朗读，离线缓存，多设备云同步。<br>
@@ -30,8 +28,6 @@ Renaisn将围绕Read&Earn 概念，用户可以在使用Renaisn的同时并赚�
 6.支持内容订阅,订阅可以更新想看的内容频道。<br>
 7.后续支持去中心化钱包功能。<br>
 8.后续更新多种打金玩赚方式。<br>
-</details>
-
 
 
 # Download-下载 [![](https://img.shields.io/badge/-Download-F5F5F5.svg)](#Download-下载-)
