@@ -4,6 +4,7 @@
 
 <div align="center">
 <img width="125" height="125" src="https://raw.githubusercontent.com/RenaisnNce/Renaisn_Android/main/app/src/main/res/drawable/logo.png"/>  
+<br>
 Renaisn
 <br>
 <a href="https://renaisn.com/" target="_blank">renaisn.com</a> 
