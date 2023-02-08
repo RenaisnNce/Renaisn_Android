@@ -11,16 +11,14 @@ Renaisn
 <br>
 Renaisn will be built around the concept of Read&Earn, where users can earn tokens while using Renaisn, which aims to change the reading habits of millions of users and will be the largest free content sharing platform in the world, where countless users will connect to the Web 3.0 world.
 </div>
-
+<br>
 [![](https://img.shields.io/badge/-Contents:-696969.svg)](#contents) [![](https://img.shields.io/badge/-Function-F5F5F5.svg)](#Function-主要功能-) [![](https://img.shields.io/badge/-Download-F5F5F5.svg)](#Download-下载-) [![](https://img.shields.io/badge/-Community-F5F5F5.svg)](#Community-交流社区-) 
 
 >Renaisn can’t provide the content, you need to add it manually, such as importing book sources, etc.
 
 # Function-主要功能 [![](https://img.shields.io/badge/-Function-F5F5F5.svg)](#Function-主要功能-)
-[English](English.md)
 
-<details><summary>中文</summary>
-    <h4>Free reading</h4><br>
+Free reading<br>
 1.Support multiple content sources, custom content sources, including but not limited to books, animation, etc.<br>
 2.Support voice reading, offline caching, multi-device cloud synchronization.<br>
 3.Support search and discovery, customize to find content more convenient.<br>
@@ -29,7 +27,7 @@ Renaisn will be built around the concept of Read&Earn, where users can earn toke
 6.Support content subscription, subscription can update the content channel you want to see.<br>
 7.Subsequent support for decentralized wallet function.<br>
 8.More Play to earn.<br>
-</details>
+
 
 
 
